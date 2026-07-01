@@ -22,3 +22,17 @@ resource "google_dns_managed_zone" "zone" {
 
   labels = var.tags
 }
+
+# ── DNS record sets ───────────────────────────────────────────────────────────
+# Creates one google_dns_record_set per entry in var.records.
+# When records is empty (the default), no record set resources are created.
+resource "google_dns_record_set" "records" {
+  for_each = { for r in var.records : "${r.name}/${r.type}" => r }
+
+  project      = var.project_id
+  name         = each.value.name
+  type         = each.value.type
+  ttl          = each.value.ttl
+  managed_zone = google_dns_managed_zone.zone.name
+  rrdatas      = each.value.rrdatas
+}
