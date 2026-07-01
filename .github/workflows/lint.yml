@@ -1,0 +1,53 @@
+name: lint
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches-ignore: [main]
+
+jobs:
+  opentofu-lint:
+    name: OpenTofu fmt + validate + tflint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: "1.12.3"
+
+      - name: Verify OpenTofu (not Terraform)
+        run: |
+          tofu version
+          if tofu version 2>&1 | grep -q "^Terraform"; then
+            echo "ERROR: terraform binary detected. STRATUM requires OpenTofu (D-INFRA-01)."
+            exit 1
+          fi
+          echo "OpenTofu confirmed."
+
+      - name: tofu fmt check
+        run: |
+          if tofu fmt -check -recursive .; then
+            echo "All .tf files are correctly formatted."
+          else
+            echo "Some .tf files are not formatted. Run: tofu fmt -recursive ."
+            exit 1
+          fi
+
+      - name: tofu init
+        run: tofu init -backend=false -input=false
+
+      - name: tofu validate
+        run: tofu validate
+
+      - name: Install tflint
+        run: curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+
+      - name: tflint
+        run: |
+          tflint --init
+          tflint --recursive
