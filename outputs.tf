@@ -33,3 +33,13 @@ output "name_servers" {
   EOT
   value       = google_dns_managed_zone.zone.name_servers
 }
+
+output "record_names" {
+  description = <<-EOT
+    Map of "<name>/<type>" keys to the DNS record set names created by this module.
+    Type: map(string).
+    Example: { "bastion.stratum.dev./A" = "bastion.stratum.dev." }
+    Empty map when records = [].
+  EOT
+  value = { for k, r in google_dns_record_set.records : k => r.name }
+}

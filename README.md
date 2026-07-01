@@ -1,85 +1,79 @@
-# Factory Module: stratum-factory-gcp-dns
+# Factory Module: `stratum-factory-gcp-dns`
+
+Provisions a GCP private DNS managed zone for the STRATUM platform, with optional custom record sets.
 
 ## Purpose
 
-Creates a private GCP DNS managed zone (`stratum.dev.`) for the STRATUM platform.
-Enables `*.stratum.dev` resolution to the in-cluster k3s ingress during the HLD
-bootstrap phase (line 451). The zone is attached to a caller-supplied VPC and is
-visible only within that network.
-
-**Factory rules applied:**
-- [x] Stateless — no remote state reads, no backend configuration
-- [x] Input-only — all configuration via variables, nothing hardcoded
-- [x] Strict validation — every variable has a validation block with an actionable error message
-- [x] No secrets — no credentials, tokens, or sensitive values in code
-- [x] Documented for humans and RAG — clear inputs, outputs, and usage examples
+Creates a `google_dns_managed_zone` (private visibility, attached to the VPC) and optional
+`google_dns_record_set` resources. When `records` is empty (the default), no record set
+resources are created.
 
 ## Usage
 
 ```hcl
-module "dns" {
-  source = "git::https://github.com/apellini/stratum-factory-gcp-dns.git?ref=v0.1.0"
+module "dev_dns" {
+  source = "git::https://github.com/apellini/stratum-factory-gcp-dns.git?ref=v0.2.0"
 
   environment = "dev"
   project_id  = "stratum-dev-sandbox"
   name_prefix = "stratum-dev"
-  network     = module.vpc.network_self_link
+  network     = module.dev_vpc.vpc_self_link
   dns_name    = "stratum.dev."
+  tags        = { environment = "dev", managed_by = "opentofu" }
 
-  tags = {
-    environment = "dev"
-    managed-by  = "opentofu"
-    module      = "stratum-factory-gcp-dns"
-  }
+  # Optional: custom DNS records
+  records = [
+    {
+      name    = "bastion.stratum.dev."
+      type    = "A"
+      ttl     = 300
+      rrdatas = ["203.0.113.10"]
+    },
+  ]
 }
 ```
 
 ## Inputs
 
-| Name | Description | Type | Default | Required |
-|------|-------------|------|---------|----------|
-| `environment` | Deployment environment. Must be one of: `dev`, `stage`, `main`. | `string` | — | yes |
-| `project_id` | GCP project ID to deploy into. Non-empty, no whitespace. | `string` | — | yes |
-| `name_prefix` | Prefix for all resource names. 3-24 chars, starts with a letter, lowercase alphanumeric or hyphens. | `string` | — | yes |
-| `network` | Self-link URI of the VPC network to attach the private DNS zone to. | `string` | — | yes |
-| `dns_name` | Fully-qualified DNS name ending with a dot. Example: `stratum.dev.` | `string` | `"stratum.dev."` | no |
-| `tags` | Map of labels to apply to all resources. Keys and values must be non-empty strings. | `map(string)` | `{}` | no |
+| Name | Type | Required | Validation | Description |
+|------|------|----------|------------|-------------|
+| `environment` | `string` | yes | one of `dev`, `stage`, `main` | Deployment environment |
+| `project_id` | `string` | yes | non-empty, no whitespace | GCP project ID |
+| `name_prefix` | `string` | yes | 3–24 chars, lowercase alphanumeric/hyphens, starts with letter | Resource name prefix |
+| `network` | `string` | yes | valid GCP network self-link URI | VPC self-link (from vpc module output) |
+| `dns_name` | `string` | optional (default `"stratum.dev."`) | FQDN ending with `.` | DNS name for the managed zone |
+| `records` | `list(object)` | optional (default `[]`) | see below | DNS record sets to create |
+| `tags` | `map(string)` | optional (default `{}`) | all keys/values non-empty | Labels applied to all resources |
+
+### `records` object attributes
+
+| Attribute | Type | Default | Validation | Description |
+|-----------|------|---------|------------|-------------|
+| `name` | `string` | — | FQDN ending with `.` | Fully-qualified DNS name for the record |
+| `type` | `string` | — | A, AAAA, CNAME, MX, NS, PTR, SOA, SRV, TXT, or CAA | DNS record type |
+| `ttl` | `number` | `300` | > 0 | Time-to-live in seconds |
+| `rrdatas` | `list(string)` | — | non-empty | Record data strings |
 
 ## Outputs
 
-| Name | Description | Type | Example |
-|------|-------------|------|---------|
-| `dns_zone_id` | Unique identifier of the DNS managed zone. | `string` | `"projects/stratum-dev-sandbox/managedZones/stratum-dev-dns-zone"` |
-| `dns_zone_name` | Name of the DNS managed zone. Use when creating `google_dns_record_set` resources. | `string` | `"stratum-dev-dns-zone"` |
-| `dns_name` | The DNS name of the managed zone (fully-qualified, with trailing dot). | `string` | `"stratum.dev."` |
-| `name_servers` | List of DNS name servers for this zone. | `list(string)` | `["ns-cloud-a1.googledomains.com.", ...]` |
+| Name | Type | Description |
+|------|------|-------------|
+| `dns_zone_id` | `string` | Unique identifier of the DNS managed zone |
+| `dns_zone_name` | `string` | Name of the DNS managed zone (use when creating record sets) |
+| `dns_name` | `string` | DNS name of the zone (FQDN with trailing dot) |
+| `name_servers` | `list(string)` | DNS name servers for this zone |
+| `record_names` | `map(string)` | Map of `"<name>/<type>"` keys → DNS record set names |
+
+## Factory rules applied
+
+- **Stateless** — no local state, no remote state reads
+- **Input-only** — all configuration via `variables.tf`; nothing hardcoded
+- **Strict validation** — every variable has a `validation` block
+- **No secrets** — no sensitive values in code or outputs
+- **Documented for humans and RAG** — this README + inline comments
 
 ## Release
 
-Consumed via git tag — never by branch:
-
 ```hcl
-source = "git::https://github.com/apellini/stratum-factory-gcp-dns.git?ref=v0.1.0"
-```
-
-Tags follow semver. The Wrapper pins the tag explicitly. Do not use `?ref=main`.
-
-## Requirements
-
-| Tool | Version |
-|------|---------|
-| OpenTofu | >= 1.8.0 |
-| hashicorp/google | ~> 6.0 |
-
-Provider registry: `registry.opentofu.org`
-
-## Testing
-
-Tests are credential-free (no GCP API calls). Validation errors fire before provider
-authentication, so both positive and negative tests run locally without credentials.
-
-```bash
-cd tests
-go mod tidy
-go test -v -timeout 10m ./...
+source = "git::https://github.com/apellini/stratum-factory-gcp-dns.git?ref=v0.2.0"
 ```
