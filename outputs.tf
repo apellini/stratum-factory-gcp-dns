@@ -41,5 +41,5 @@ output "record_names" {
     Example: { "bastion.stratum.dev./A" = "bastion.stratum.dev." }
     Empty map when records = [].
   EOT
-  value = { for k, r in google_dns_record_set.records : k => r.name }
+  value       = { for k, r in google_dns_record_set.records : k => r.name }
 }
